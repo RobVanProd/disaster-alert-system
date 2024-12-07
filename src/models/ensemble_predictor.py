@@ -14,8 +14,10 @@ class EnsemblePredictor:
     
     def _initialize_models(self) -> None:
         """Initialize all disaster prediction models"""
-        # Add earthquake model
-        self.models['earthquake'] = EarthquakeModel()
+        # Add earthquake model with appropriate input dimensions
+        # Input features: [latitude, longitude, depth, magnitude, time_of_day, day_of_week]
+        earthquake_input_dim = 6
+        self.models['earthquake'] = EarthquakeModel(input_dim=earthquake_input_dim)
         
         # TODO: Add more models for different disaster types
         # self.models['hurricane'] = HurricaneModel()

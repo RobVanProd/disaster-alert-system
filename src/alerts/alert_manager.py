@@ -6,23 +6,23 @@ from datetime import datetime
 import logging
 from enum import Enum
 from typing import Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-class AlertSeverity(Enum):
+class AlertType(str, Enum):
+    """Types of alerts"""
+    EARTHQUAKE = "earthquake"
+    WEATHER = "weather"
+    FLOOD = "flood"
+    WILDFIRE = "wildfire"
+
+class AlertSeverity(str, Enum):
     """Alert severity levels"""
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
-
-class AlertType(Enum):
-    """Types of alerts"""
-    EARTHQUAKE = "earthquake"
-    WEATHER = "weather"
-    FLOOD = "flood"
-    TSUNAMI = "tsunami"
 
 class Alert(BaseModel):
     """Alert data model"""
@@ -32,42 +32,51 @@ class Alert(BaseModel):
     title: str
     description: str
     location: Dict[str, float]
-    timestamp: datetime
-    metadata: Optional[Dict] = None
-    
+    timestamp: Optional[str] = None
+
+class SMTPConfig(BaseModel):
+    """SMTP configuration"""
+    smtp_server: str
+    smtp_port: int = 587
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+
 class AlertChannel(BaseModel):
     """Base class for alert channels"""
+    name: str = Field(default="base")
+    enabled: bool = Field(default=True)
+
     async def send_alert(self, alert: Alert) -> bool:
         """Send alert through the channel"""
         raise NotImplementedError
 
 class EmailAlertChannel(AlertChannel):
     """Email-based alert channel"""
-    def __init__(self, smtp_config: Dict):
-        self.smtp_config = smtp_config
-        
+    name: str = Field(default="email")
+    config: SMTPConfig
+
     async def send_alert(self, alert: Alert) -> bool:
-        # TODO: Implement email sending
+        # TODO: Implement email sending logic
         logger.info(f"Sending email alert: {alert.title}")
         return True
 
 class SMSAlertChannel(AlertChannel):
     """SMS-based alert channel"""
-    def __init__(self, sms_config: Dict):
-        self.sms_config = sms_config
-        
+    name: str = Field(default="sms")
+    api_key: str
+
     async def send_alert(self, alert: Alert) -> bool:
-        # TODO: Implement SMS sending
+        # TODO: Implement SMS sending logic
         logger.info(f"Sending SMS alert: {alert.title}")
         return True
 
 class WebhookAlertChannel(AlertChannel):
     """Webhook-based alert channel"""
-    def __init__(self, webhook_urls: List[str]):
-        self.webhook_urls = webhook_urls
-        
+    name: str = Field(default="webhook")
+    webhook_url: str
+
     async def send_alert(self, alert: Alert) -> bool:
-        # TODO: Implement webhook calls
+        # TODO: Implement webhook sending logic
         logger.info(f"Sending webhook alert: {alert.title}")
         return True
 
@@ -76,10 +85,9 @@ class AlertManager:
     
     def __init__(self):
         self.channels: List[AlertChannel] = []
-        self.alert_history: List[Alert] = []
-        self._alert_queue = asyncio.Queue()
+        self.alerts: List[Alert] = []
         
-    def add_channel(self, channel: AlertChannel):
+    def add_channel(self, channel: AlertChannel) -> None:
         """Add a new alert channel"""
         self.channels.append(channel)
         
@@ -90,63 +98,35 @@ class AlertManager:
         title: str,
         description: str,
         location: Dict[str, float],
-        metadata: Optional[Dict] = None
     ) -> Alert:
         """Create a new alert"""
         alert = Alert(
-            id=f"{alert_type.value}-{datetime.utcnow().timestamp()}",
+            id=f"{alert_type.value}_{len(self.alerts)}",
             type=alert_type,
             severity=severity,
             title=title,
             description=description,
             location=location,
-            timestamp=datetime.utcnow(),
-            metadata=metadata
         )
-        
-        asyncio.create_task(self._alert_queue.put(alert))
+        self.alerts.append(alert)
         return alert
         
-    async def process_alerts(self):
-        """Process alerts from the queue"""
-        while True:
-            alert = await self._alert_queue.get()
-            self.alert_history.append(alert)
-            
-            # Send alert through all channels
-            tasks = [
-                channel.send_alert(alert)
-                for channel in self.channels
-            ]
-            
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Log results
-            for channel, result in zip(self.channels, results):
-                if isinstance(result, Exception):
-                    logger.error(f"Failed to send alert through {channel.__class__.__name__}: {str(result)}")
-                elif not result:
-                    logger.warning(f"Alert not sent through {channel.__class__.__name__}")
-                    
-            self._alert_queue.task_done()
-            
+    async def process_alerts(self) -> None:
+        """Process all pending alerts"""
+        for alert in self.alerts:
+            for channel in self.channels:
+                if channel.enabled:
+                    await channel.send_alert(alert)
+
     def get_alert_history(
         self,
         alert_type: Optional[AlertType] = None,
         severity: Optional[AlertSeverity] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
     ) -> List[Alert]:
-        """Get filtered alert history"""
-        filtered_alerts = self.alert_history
-        
+        """Get alert history with optional filters"""
+        filtered_alerts = self.alerts
         if alert_type:
             filtered_alerts = [a for a in filtered_alerts if a.type == alert_type]
         if severity:
             filtered_alerts = [a for a in filtered_alerts if a.severity == severity]
-        if start_time:
-            filtered_alerts = [a for a in filtered_alerts if a.timestamp >= start_time]
-        if end_time:
-            filtered_alerts = [a for a in filtered_alerts if a.timestamp <= end_time]
-            
         return filtered_alerts

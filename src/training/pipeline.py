@@ -4,7 +4,7 @@ Model Training Pipeline for Disaster Prediction Models
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional, Type, Any
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -22,21 +22,20 @@ class ModelTrainingPipeline:
     
     def __init__(
         self,
-        model_class: Type[BaseDisasterModel],
+        model_class: Type,
         data_path: Path,
-        model_params: Optional[Dict] = None,
+        model_params: Dict[str, Any],
         test_size: float = 0.2,
         random_state: int = 42
     ):
+        """Initialize the pipeline"""
         self.model_class = model_class
         self.data_path = data_path
-        self.model_params = model_params or {}
+        self.model_params = model_params
         self.test_size = test_size
         self.random_state = random_state
-        
-        self.model = None
         self.scaler = StandardScaler()
-        self.training_history = None
+        self.model = None
         
     def load_data(self) -> pd.DataFrame:
         """Load and preprocess training data"""
@@ -64,18 +63,19 @@ class ModelTrainingPipeline:
         logger.info("Preprocessing data")
         
         # Split features and target
-        X = df.drop(columns=['target']).values
+        X = df.drop('target', axis=1).values
         y = df['target'].values
         
-        # Scale features
-        X = self.scaler.fit_transform(X)
-        
-        # Split into train and test sets
+        # Split into train/test sets
         X_train, X_test, y_train, y_test = train_test_split(
             X, y,
             test_size=self.test_size,
             random_state=self.random_state
         )
+        
+        # Scale features
+        X_train = self.scaler.fit_transform(X_train)
+        X_test = self.scaler.transform(X_test)
         
         logger.info(f"Training set size: {len(X_train)}")
         logger.info(f"Test set size: {len(X_test)}")
@@ -96,7 +96,7 @@ class ModelTrainingPipeline:
         self.model = self.model_class(**self.model_params)
         
         # Train model
-        self.training_history = self.model.train(
+        self.model.fit(
             X_train,
             y_train,
             validation_data=validation_data,
@@ -116,16 +116,7 @@ class ModelTrainingPipeline:
         if self.model is None:
             raise ValueError("Model has not been trained yet")
             
-        # Get model predictions
-        y_pred = self.model.predict(X_test)
-        
-        # Calculate metrics
-        metrics = self.model.evaluate(X_test, y_test)
-        
-        logger.info("Model evaluation completed")
-        logger.info(f"Metrics: {metrics}")
-        
-        return metrics
+        return self.model.evaluate(X_test, y_test)
         
     def save_model(self, save_path: Path):
         """Save trained model and artifacts"""
@@ -138,19 +129,26 @@ class ModelTrainingPipeline:
         save_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Save model
-        self.model.save(save_path)
+        self.model.model.save(save_path)  # For Keras models
         
         # Save scaler
         scaler_path = save_path.parent / "scaler.pkl"
         pd.to_pickle(self.scaler, scaler_path)
         
-        # Save training history
-        if self.training_history is not None:
-            history_path = save_path.parent / "training_history.json"
-            with open(history_path, 'w') as f:
-                json.dump(self.training_history, f)
-                
         logger.info("Model and artifacts saved successfully")
+        
+    def load_model(self, load_path: Path):
+        """Load a trained model"""
+        logger.info(f"Loading model from {load_path}")
+        
+        if not load_path.exists():
+            raise FileNotFoundError(f"Model file not found at {load_path}")
+            
+        # Initialize model
+        self.model = self.model_class(**self.model_params)
+        
+        # Load weights
+        self.model.model = tf.keras.models.load_model(load_path)
         
     @classmethod
     def load_trained_model(

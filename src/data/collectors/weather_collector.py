@@ -1,19 +1,20 @@
 """
 Weather data collector that integrates with OpenWeatherMap API
 """
+import logging
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+
 import aiohttp
 import asyncio
-from datetime import datetime
-import logging
 import os
-from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 class WeatherDataCollector:
     """Collects real-time weather data from OpenWeatherMap API"""
     
-    OWM_API_URL = "http://api.openweathermap.org/data/2.5/weather"
+    OWM_API_URL = "https://api.openweathermap.org/data/2.5/weather"
     
     def __init__(self, api_key: Optional[str] = None, update_interval: int = 900):
         """
@@ -71,8 +72,14 @@ class WeatherDataCollector:
                     if response.status == 200:
                         data = await response.json()
                         return self._process_weather_data(data)
+                    elif response.status == 401:
+                        error_data = await response.json()
+                        logger.error(f"OpenWeatherMap API key error: {error_data.get('message', 'Unknown error')}. "
+                                   "If this is a new API key, please wait up to 2 hours for it to be fully activated.")
+                        return {}
                     else:
-                        logger.error(f"Failed to fetch weather data: {response.status}")
+                        error_data = await response.json()
+                        logger.error(f"Failed to fetch weather data (status {response.status}): {error_data.get('message', 'Unknown error')}")
                         return {}
         except Exception as e:
             logger.error(f"Error fetching weather data: {str(e)}")
@@ -91,10 +98,9 @@ class WeatherDataCollector:
         weather = data.get('weather', [{}])[0]
         main = data.get('main', {})
         wind = data.get('wind', {})
-        rain = data.get('rain', {})
         
         return {
-            'time': datetime.utcnow(),
+            'time': datetime.now(timezone.utc),
             'location': {
                 'latitude': data.get('coord', {}).get('lat'),
                 'longitude': data.get('coord', {}).get('lon'),
@@ -105,8 +111,6 @@ class WeatherDataCollector:
             'pressure': main.get('pressure'),
             'wind_speed': wind.get('speed'),
             'wind_direction': wind.get('deg'),
-            'rain_1h': rain.get('1h', 0),
-            'rain_3h': rain.get('3h', 0),
             'weather_main': weather.get('main'),
             'weather_description': weather.get('description'),
             'clouds': data.get('clouds', {}).get('all')
@@ -126,7 +130,7 @@ class WeatherDataCollector:
                         # TODO: Implement data storage
                         logger.info(f"Collected weather data for {location['name']}")
                         
-                self.last_update = datetime.utcnow()
+                self.last_update = datetime.now(timezone.utc)
                 
             except Exception as e:
                 logger.error(f"Error in collection loop: {str(e)}")

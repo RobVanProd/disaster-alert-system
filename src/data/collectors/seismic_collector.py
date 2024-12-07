@@ -1,10 +1,10 @@
 """
 Seismic data collector that integrates with USGS Earthquake API
 """
+import logging
 import aiohttp
 import asyncio
-from datetime import datetime, timedelta
-import logging
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -45,9 +45,9 @@ class SeismicDataCollector:
             List of earthquake events
         """
         if not start_time:
-            start_time = datetime.utcnow() - timedelta(days=1)
+            start_time = datetime.now(timezone.utc) - timedelta(days=1)
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(timezone.utc)
             
         params = {
             'format': 'geojson',
@@ -89,7 +89,7 @@ class SeismicDataCollector:
             
             processed_event = {
                 'id': feature.get('id'),
-                'time': datetime.fromtimestamp(properties.get('time', 0) / 1000),
+                'time': datetime.fromtimestamp(properties.get('time', 0) / 1000, timezone.utc),
                 'magnitude': properties.get('mag'),
                 'depth': properties.get('depth'),
                 'location': {
@@ -112,7 +112,7 @@ class SeismicDataCollector:
         while self.is_running:
             try:
                 data = await self.get_earthquake_data()
-                self.last_update = datetime.utcnow()
+                self.last_update = datetime.now(timezone.utc)
                 # TODO: Implement data storage
                 logger.info(f"Collected {len(data)} earthquake events")
                 
