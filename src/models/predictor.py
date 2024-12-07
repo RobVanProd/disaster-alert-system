@@ -1,112 +1,63 @@
-import numpy as np
 from datetime import datetime
-from typing import Dict, List, Tuple
-from sklearn.ensemble import RandomForestClassifier
-from utils.data_collector import DataCollector
+from typing import Dict, Any
+from .ensemble_predictor import EnsemblePredictor
+from ..utils.data_collector import DataCollector
 
 class DisasterPredictor:
     def __init__(self):
+        self.ensemble = EnsemblePredictor()
         self.data_collector = DataCollector()
-        self.model = RandomForestClassifier()
-        self.disaster_types = [
-            "earthquake",
-            "flood",
-            "hurricane",
-            "wildfire",
-            "tsunami"
-        ]
-        
-    def collect_environmental_data(self, latitude: float, longitude: float) -> Dict:
-        """
-        Collect real-time environmental data for the specified location
-        """
-        return self.data_collector.get_environmental_data(latitude, longitude)
     
-    def analyze_seismic_activity(self, latitude: float, longitude: float) -> Dict:
+    def evaluate_risk(self, latitude: float, longitude: float, region: str) -> Dict[str, Any]:
         """
-        Analyze recent seismic activity in the region
+        Evaluate disaster risks for a given location
         """
-        return self.data_collector.get_seismic_data(latitude, longitude)
+        # Collect all necessary data
+        input_data = self._collect_data(latitude, longitude)
+        input_data['region_name'] = region
+        
+        # Get predictions from ensemble
+        prediction = self.ensemble.predict(input_data)
+        
+        # Add timestamp to prediction
+        prediction['timestamp'] = datetime.now().isoformat()
+        
+        return prediction
     
-    def analyze_weather_patterns(self, latitude: float, longitude: float) -> Dict:
+    def _collect_data(self, latitude: float, longitude: float) -> Dict[str, Any]:
         """
-        Analyze weather patterns and forecasts
+        Collect all necessary data for prediction
         """
-        return self.data_collector.get_weather_data(latitude, longitude)
-    
-    def evaluate_risk(self, latitude: float, longitude: float, region: str) -> Dict:
-        """
-        Evaluate disaster risks based on collected data
-        """
-        # Collect all relevant data
-        env_data = self.collect_environmental_data(latitude, longitude)
-        seismic_data = self.analyze_seismic_activity(latitude, longitude)
-        weather_data = self.analyze_weather_patterns(latitude, longitude)
+        # Get environmental data
+        env_data = self.data_collector.get_environmental_data(latitude, longitude)
         
-        # Combine data for prediction
-        features = self._prepare_features(env_data, seismic_data, weather_data)
+        # Get seismic data
+        seismic_data = self.data_collector.get_seismic_data(latitude, longitude)
         
-        # Make prediction
-        risk_scores = self._predict_risks(features)
+        # Get weather data
+        weather_data = self.data_collector.get_weather_data(latitude, longitude)
         
-        # Prepare risk assessment
-        assessment = {
-            "location": {
-                "latitude": latitude,
-                "longitude": longitude,
-                "region_name": region
+        # Combine all data
+        return {
+            "latitude": latitude,
+            "longitude": longitude,
+            "timestamp": datetime.now().isoformat(),
+            "environmental_data": {
+                "seismic": seismic_data,
+                "weather": weather_data,
+                **env_data
             },
-            "risk_level": self._determine_risk_level(risk_scores),
-            "potential_disasters": self._identify_potential_disasters(risk_scores),
-            "confidence": float(np.mean([score[1] for score in risk_scores])),
-            "timestamp": datetime.now()
+            "historical_data": self._get_historical_data(latitude, longitude)
         }
-        
-        return assessment
     
-    def _prepare_features(self, env_data: Dict, seismic_data: Dict, weather_data: Dict) -> np.ndarray:
+    def _get_historical_data(self, latitude: float, longitude: float) -> Dict[str, Any]:
         """
-        Prepare feature vector for model prediction
+        Get historical disaster data for the location
         """
-        # Combine all data into a feature vector
-        # This is a simplified version - in reality, we would need more sophisticated feature engineering
-        features = []
-        features.extend([
-            env_data.get("temperature", 0),
-            env_data.get("humidity", 0),
-            env_data.get("pressure", 0),
-            seismic_data.get("magnitude", 0),
-            seismic_data.get("depth", 0),
-            weather_data.get("wind_speed", 0),
-            weather_data.get("precipitation", 0)
-        ])
-        return np.array(features).reshape(1, -1)
-    
-    def _predict_risks(self, features: np.ndarray) -> List[Tuple[str, float]]:
-        """
-        Predict risk scores for each disaster type
-        """
-        # This is a simplified version - in reality, we would use more sophisticated models
-        risk_scores = []
-        for disaster_type in self.disaster_types:
-            # Simulate prediction scores - in reality, this would use trained models
-            score = np.random.random()  # Replace with actual model prediction
-            risk_scores.append((disaster_type, score))
-        return risk_scores
-    
-    def _determine_risk_level(self, risk_scores: List[Tuple[str, float]]) -> str:
-        """
-        Determine overall risk level based on individual risk scores
-        """
-        max_score = max([score[1] for score in risk_scores])
-        if max_score > 0.7:
-            return "HIGH"
-        elif max_score > 0.4:
-            return "MEDIUM"
-        return "LOW"
-    
-    def _identify_potential_disasters(self, risk_scores: List[Tuple[str, float]]) -> List[str]:
-        """
-        Identify potential disasters based on risk scores
-        """
-        return [disaster for disaster, score in risk_scores if score > 0.4]
+        # This would typically fetch data from a database or external API
+        # For now, returning mock data
+        return {
+            "avg_magnitude": 3.5,
+            "frequency": 12,  # Number of events per year
+            "max_magnitude": 5.8
+        }
